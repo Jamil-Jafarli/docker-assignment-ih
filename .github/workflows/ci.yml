@@ -1,0 +1,62 @@
+name: Deploy to Azure VM
+ 
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+ 
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+ 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+ 
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+ 
+            if [ -d "$HOME/docker-assignment-ih/.git" ]; then
+              cd $HOME/docker-assignment-ih
+              git pull origin main
+            else
+              git clone https://github.com/saurabhd2106/docker-assignment-ih.git $HOME/docker-assignment-ih
+              cd $HOME/docker-assignment-ih
+            fi
+ 
+            if ! command -v docker &> /dev/null; then
+              sudo apt update
+              sudo apt install -y docker.io
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -aG docker $USER
+            fi
+ 
+            if ! docker compose version &> /dev/null; then
+              sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-$(uname -s)-$(uname -m)" \
+                -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+            fi
+ 
+            cd $HOME/docker-assignment-ih
+ 
+            sudo docker compose down --remove-orphans || true
+            sudo docker compose up --build -d
+ 
+            sudo docker compose ps
+ 
+            sleep 30
+ 
+            curl -sf http://localhost:3001/health && echo "Backend OK" || echo "Backend XETA"
+            curl -sf http://localhost:3000 > /dev/null && echo "Frontend OK" || echo "Frontend XETA"
+            curl -sf http://localhost:3000/notes && echo "Notes API OK" || echo "Notes API XETA"
